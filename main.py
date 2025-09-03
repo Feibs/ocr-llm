@@ -20,7 +20,7 @@ st.title("Financial Statement Extractor")
 st.markdown("<h3 style='color: white;'>Mistral OCR + OpenAI LLM</h3>", unsafe_allow_html=True)
 with st.expander("Expand Me"):
     st.markdown("""
-    This application extracts information from PDFs or images using Mistral OCR
+    This application extracts information from document using Mistral OCR
     and processes the results with an LLM from OpenWebUI.
     """)
 
@@ -59,7 +59,6 @@ def send_to_openwebui(document):
             f"{LLM_API_ENDPOINT}/api/chat/completions",
             json=payload,
             headers=headers,
-            # timeout=60,
         )
         if response.status_code == 200:
             result = response.json()
@@ -107,9 +106,10 @@ if st.button("Process"):
                         document=document,
                         include_image_base64=False
                     )
-                    time.sleep(1)  # prevent rate limit issues
+                    time.sleep(1)
                     pages = ocr_response.pages if hasattr(ocr_response, "pages") else []
                     result_text = "\n\n".join(page.markdown for page in pages) or "No result found."
+                   
                 except Exception as e:
                     result_text = f"Error extracting result: {e}"
 
@@ -123,22 +123,21 @@ if st.session_state["ocr_result"]:
         col1, col2 = st.columns(2)
 
         with col1:
-            st.subheader(f"Input PDF/Image {idx+1}")
+            st.subheader(f"Input Document")
             if file_type == "PDF":
-                pdf_embed_html = f'<iframe src="{st.session_state["preview_src"][idx]}" width="100%" height="800" frameborder="0"></iframe>'
+                pdf_embed_html = f'<iframe src="{st.session_state["preview_src"][idx]}" width="100%" height="800" frameborder="0" style="border: none; box-shadow: 0 0 10px rgba(0,0,0,0.2); border-radius: 8px;"></iframe>'
                 st.markdown(pdf_embed_html, unsafe_allow_html=True)
             else:
                 st.image(st.session_state["image_bytes"][idx])
 
         with col2:
-            st.subheader(f"Processed Result {idx+1}")
+            st.subheader("Processed Result")
 
-            # Download link for raw OCR markdown
-            b64 = base64.b64encode(result.encode()).decode()
-            href = f'<a href="data:text/markdown;base64,{b64}" download="{filename}.md">Download {filename}.md</a>'
-            st.markdown(href, unsafe_allow_html=True)
-
-            # Send to OpenWebUI and display result
             with st.spinner("Processing with OpenWebUI..."):
                 processed_text = send_to_openwebui(result)
-                st.markdown(processed_text, unsafe_allow_html=True)
+
+                processed_b64 = base64.b64encode(processed_text.encode()).decode()
+                processed_href = f'<a href="data:text/markdown;base64,{processed_b64}" download="{filename}_processed.md">📥 Download</a>'
+                st.markdown(processed_href, unsafe_allow_html=True)
+
+                st.markdown(processed_text)
