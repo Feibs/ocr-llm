@@ -1,22 +1,31 @@
 """
 title: Financial Extractor Pipe
-date: 12-08-2025
+date: 3-9-2025
 version: 1.0.0
 description: A pipe that processes extracted document through multiple sequential custom models
 """
 
-from typing import List, Union, Generator, Iterator
+from typing import Union, Generator, Iterator
 import os
-import base64
-import requests
-import pathlib
+from fastapi import Request
 from pydantic import BaseModel, Field
+from open_webui.main import chat_completion
+
+
+class User(BaseModel):
+    """
+    Represents a user interacting with the system.
+    """
+
+    id: str
+    email: str
+    name: str
+    role: str
 
 
 class Pipe:
     class Valves(BaseModel):
         """Configuration for Financial Extractor Pipe"""
-
         LLM_API_ENDPOINT: str = Field(default="")
         LLM_API_KEY: str = Field(default="")
         LLM_BSE_ID: str = Field(default="balance-sheet")
@@ -34,17 +43,37 @@ class Pipe:
             }
         )
 
-    def pipe(self, body: dict) -> Union[str, Generator, Iterator]:
+    async def pipe(
+        self, body: dict, __user__: dict, __request__: Request
+    ) -> Union[str, Generator, Iterator]:
+
+        user = User(**__user__)
+
         try:
             markdown_content = body["messages"][-1]["content"]
-            balance_sheet_result = self.process_with_custom_model(
-                markdown_content, self.valves.LLM_BSE_ID, "Balance Sheet"
+            balance_sheet_result = await self.process_with_custom_model(
+                body,
+                markdown_content,
+                self.valves.LLM_BSE_ID,
+                "Balance Sheet",
+                __request__,
+                user,
             )
-            income_statement_result = self.process_with_custom_model(
-                markdown_content, self.valves.LLM_ISE_ID, "Income Statement"
+            income_statement_result = await self.process_with_custom_model(
+                body,
+                markdown_content,
+                self.valves.LLM_ISE_ID,
+                "Income Statement",
+                __request__,
+                user,
             )
-            cash_flow_statement_result = self.process_with_custom_model(
-                markdown_content, self.valves.LLM_CFSE_ID, "Cash Flow Statement"
+            cash_flow_statement_result = await self.process_with_custom_model(
+                body,
+                markdown_content,
+                self.valves.LLM_CFSE_ID,
+                "Cash Flow Statement",
+                __request__,
+                user,
             )
 
             final_response = self.format_combined_response(
@@ -57,55 +86,40 @@ class Pipe:
         except Exception as e:
             return f"Error in pipe: {str(e)}"
 
-    def process_with_custom_model(self, markdown_content, model_id, model_name):
+    async def process_with_custom_model(
+        self,
+        body: dict,
+        markdown_content: str,
+        model_id: str,
+        model_name: str,
+        request: Request,
+        user: User,
+    ):
         if not model_id:
             return f"{model_name}: Model ID not configured"
-
         try:
-            payload = {
-                "model": model_id,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": f"Extract {model_name}:\n\n{markdown_content}",
-                    }
-                ],
-                "stream": False,
-            }
-
-            headers = {
-                "Authorization": f"Bearer {self.valves.LLM_API_KEY}",
-                "Content-Type": "application/json",
-            }
-
-            response = requests.post(
-                f"{self.valves.LLM_API_ENDPOINT}/api/chat/completions",
-                json=payload,
-                headers=headers,
+            body["messages"].append(
+                {
+                    "role": "user",
+                    "content": f"Extract {model_name}:\n\n{markdown_content}",
+                }
             )
-
-            if response.status_code == 200:
-                result = response.json()
-                return result["choices"][0]["message"]["content"]
-            else:
-                return f"{model_name}: Error {response.status_code} - {response.text}"
-
+            payload = {**body, "model": model_id}
+            return await chat_completion(request, payload, user)
         except Exception as e:
             return f"{model_name}: Processing failed - {str(e)}"
 
     def format_combined_response(
-        self, balance_sheet_result, income_statement_result, cash_flow_statement_result
+        self,
+        balance_sheet_result: str,
+        income_statement_result: str,
+        cash_flow_statement_result: str,
     ):
-        response = f"""# Financial Statement Extraction Result
+        response = f"""### Financial Statement
 
-## Balance Sheet Extraction
-{balance_sheet_result}
-
-## Income Statement Extraction
-{income_statement_result}
-
-## Cash Flow Statement Extraction
-{cash_flow_statement_result}
+{balance_sheet_result["choices"][0]["message"]["content"]}
+{income_statement_result["choices"][0]["message"]["content"]}
+{cash_flow_statement_result["choices"][0]["message"]["content"]}
 
 ---
 
