@@ -133,6 +133,11 @@ if st.session_state["ocr_result"]:
         with col2:
             st.subheader("Processed Result")
 
+            # Download link for raw OCR markdown
+            b64 = base64.b64encode(result.encode()).decode()
+            href = f'<a href="data:text/markdown;base64,{b64}" download="{filename}.md">📥 Download OCR result: {filename}.md</a>'
+            st.markdown(href, unsafe_allow_html=True)
+
             with st.spinner("Processing with OpenWebUI..."):
                 processed_text = send_to_openwebui(result)
 
