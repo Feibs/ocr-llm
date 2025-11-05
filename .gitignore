@@ -172,3 +172,6 @@ cython_debug/
 
 # Credential file
 credential.txt
+
+# Sample file
+sample
